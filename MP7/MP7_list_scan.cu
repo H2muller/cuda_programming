@@ -49,10 +49,24 @@ __global__ void parallelScan(float *input, float *output, int len) {
   //@@ the scan on the device
   //@@ You may need multiple kernel calls; write your kernels before this
   //@@ function and call them from here
-
-
+  
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
 
   __shared__ float sharedArray[BLOCK_SIZE * 2];
+
+  if(2 * index < len){
+        sharedArray[2 * threadIdx.x] = input[2 * index];
+  } else {
+        sharedArray[2 * threadIdx.x] = 0; 
+  }
+   if(2 * index  + 1 < len){
+        sharedArray[2 * threadIdx.x + 1] = input[2 * index + 1];
+  } else {
+        sharedArray[2 * threadIdx.x + 1] = 0;
+  }
+  __syncthreads();
+
+
 
 
 
