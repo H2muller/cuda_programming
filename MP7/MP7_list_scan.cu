@@ -53,11 +53,12 @@ int main(int argc, char **argv) {
   wbTime_stop(GPU, "Clearing output memory.");
 
   wbTime_start(GPU, "Copying input memory to the GPU.");
-  wbCheck(cudaMemcpy(deviceInput, hostInput, numElements * sizeof(float),
-                     cudaMemcpyHostToDevice));
+  wbCheck(cudaMemcpy(deviceInput, hostInput, numElements * sizeof(float), cudaMemcpyHostToDevice));
   wbTime_stop(GPU, "Copying input memory to the GPU.");
 
   //@@ Initialize the grid and block dimensions here
+  dim3 dimGrid(1, 1, 1);
+  dim3 dimBlock(BLOCK_SIZE, 1, 1);
 
   wbTime_start(Compute, "Performing CUDA computation");
   //@@ Modify this to complete the functionality of the scan
@@ -67,8 +68,7 @@ int main(int argc, char **argv) {
   wbTime_stop(Compute, "Performing CUDA computation");
 
   wbTime_start(Copy, "Copying output memory to the CPU");
-  wbCheck(cudaMemcpy(hostOutput, deviceOutput, numElements * sizeof(float),
-                     cudaMemcpyDeviceToHost));
+  wbCheck(cudaMemcpy(hostOutput, deviceOutput, numElements * sizeof(float), cudaMemcpyDeviceToHost));
   wbTime_stop(Copy, "Copying output memory to the CPU");
 
   wbTime_start(GPU, "Freeing GPU Memory");
