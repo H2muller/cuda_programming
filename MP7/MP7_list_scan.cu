@@ -18,11 +18,32 @@
     }                                                                     \
   } while (0)
 
-__global__ void scan(float *input, float *output, int len) {
+
+__global__ void reductionPhaseKernel() {
+  // XY[22 * BLOCK_SIZE] from shared memory
+  for (unsigned int stride = 1; stride <= BLOCK_SIZE; stride *= 2) {
+    int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
+    if (localIdx < 2 * BLOCK_SIZE) {
+      XY[localIdx] += XY[localIdx - stride];
+    __syncthreads();
+    }
+  }
+
+}
+
+__global__ void parallelScan(float *input, float *output, int len) {
   //@@ Modify the body of this function to complete the functionality of
   //@@ the scan on the device
   //@@ You may need multiple kernel calls; write your kernels before this
   //@@ function and call them from here
+
+
+
+  __shared__ float sharedArray[BLOCK_SIZE * 2];
+
+
+
+
 }
 
 int main(int argc, char **argv) {
@@ -63,6 +84,8 @@ int main(int argc, char **argv) {
   wbTime_start(Compute, "Performing CUDA computation");
   //@@ Modify this to complete the functionality of the scan
   //@@ on the deivce
+
+
 
   cudaDeviceSynchronize();
   wbTime_stop(Compute, "Performing CUDA computation");
