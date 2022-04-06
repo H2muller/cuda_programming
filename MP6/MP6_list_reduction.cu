@@ -16,8 +16,7 @@
     }                                                                     \
   } while (0)
 
-__global__ void listReduction(float *input, float *output, int len) {
-  // len == length of input vector
+__global__ void total(float *input, float *output, int len) {
 
   int index = blockIdx.x * BLOCK_SIZE + threadIdx.x;
 
@@ -100,7 +99,7 @@ int main(int argc, char **argv) {
   wbTime_start(Compute, "Performing CUDA computation");
   
   //@@ Launch the GPU Kernel here
-  listReduction<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, numInputElements);
+  total<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, numInputElements);
 
   cudaDeviceSynchronize();
   wbTime_stop(Compute, "Performing CUDA computation");
