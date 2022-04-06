@@ -12,11 +12,26 @@
 
 // Compute C = A * B
 __global__ void matrixMultiply(float *A, float *B, float *C, int numARows,
-                                int numAColumns, int numBRows,
-                                int numBColumns, int numCRows,
-                                int numCColumns) {
+                               int numAColumns, int numBRows,
+                               int numBColumns, int numCRows,
+                               int numCColumns) {
   //@@ Insert code to implement matrix multiplication here
-
+  
+  //Calculate the row index of the C and A
+  int Row = blockIdx.y * blockDim.y + threadIdx.y;
+  //Calculate the column index of the C and B
+  int Col = blockIdx.x * blockDim.x + threadIdx.x;
+  
+  //Check whether numAColumns == numBRows, otherwise operation is invalid
+  if (numAColumns == numBRows) {
+    if ((Row < numCRows) && (Col < numCColumns)) {
+      float Cvalue = 0;
+      for (int k = 0; k < numBRows; ++k) {
+        Cvalue += A[Row * numAColumns + k] * B[k * numBColumns + Col];
+      }
+      C[Row*numCColumns + Col] = Cvalue;
+    }
+  }
 }
 
 int main(int argc, char **argv) {
@@ -45,11 +60,15 @@ int main(int argc, char **argv) {
   //@@ Set numCRows and numCColumns
   numCRows = numARows;
   numCColumns = numBColumns;
+
   //@@ Allocate the hostC matrix
+  hostC = (float *)malloc(numCRows * numCColumns * sizeof(float));
+
   wbTime_stop(Generic, "Importing data and creating memory on host");
 
   wbLog(TRACE, "The dimensions of A are ", numARows, " x ", numAColumns);
   wbLog(TRACE, "The dimensions of B are ", numBRows, " x ", numBColumns);
+  wbLog(TRACE, "The dimensions of C are ", numCRows, " x ", numCColumns);
 
   wbTime_start(GPU, "Allocating GPU memory.");
   //@@ Allocate GPU memory here
@@ -63,13 +82,11 @@ int main(int argc, char **argv) {
   //@@ Copy memory to the GPU here
   cudaMemcpy(deviceA, hostA, numARows * numAColumns * sizeof(float), cudaMemcpyHostToDevice);
   cudaMemcpy(deviceB, hostB, numBRows * numBColumns * sizeof(float), cudaMemcpyHostToDevice);
-  // cudaMemcpy(deviceC, hostC, numCRows * numCColumns * sizeof(float), cudaMemcpyHostToDevice);
-
 
   wbTime_stop(GPU, "Copying input memory to the GPU.");
 
   //@@ Initialize the grid and block dimensions here
-  dim3 DimGrid(ceil(numARows/16.0),ceil(numBRows/16.0),1);
+  dim3 DimGrid(ceil(numCColumns/16.0),ceil(numCRows/16.0),1);
   dim3 DimBlock(16,16,1);
 
   wbTime_start(Compute, "Performing CUDA computation");
@@ -81,8 +98,6 @@ int main(int argc, char **argv) {
 
   wbTime_start(Copy, "Copying output memory to the CPU");
   //@@ Copy the GPU memory back to the CPU here
-  // cudaMemcpy(hostA, deviceA, numARows * numAColumns * sizeof(float), cudaMemcpyDeviceToHost);
-  // cudaMemcpy(hostB, deviceB, numBRows * numBColumns * sizeof(float), cudaMemcpyDeviceToHost);
   cudaMemcpy(hostC, deviceC, numCRows * numCColumns * sizeof(float), cudaMemcpyDeviceToHost);
 
   wbTime_stop(Copy, "Copying output memory to the CPU");
@@ -103,4 +118,5 @@ int main(int argc, char **argv) {
 
   return 0;
 }
+
 
