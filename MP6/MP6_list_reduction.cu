@@ -17,6 +17,7 @@
   } while (0)
 
 __global__ void listReduction(float *input, float *output, int len) {
+  // len == length of input vector
 
   int index = blockIdx.x * BLOCK_SIZE + threadIdx.x;
 
