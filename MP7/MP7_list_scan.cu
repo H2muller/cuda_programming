@@ -28,8 +28,21 @@ __global__ void reductionPhaseKernel() {
     __syncthreads();
     }
   }
-
 }
+
+__global__ void postReductionReversePhase() {
+  for (unsigned int stride = BLOCK_SIZE / 2; stride > 0; stride /= 2) {
+    int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
+    if (localIdx < 2 * BLOCK_SIZE) {
+      XY[localIdx + stride] += XY[localIdx];
+    }
+  }
+  __syncthreads();
+  if (i < InputSize) {
+    Output[i] = XY[threadIdx.x];
+  }
+}
+
 
 __global__ void parallelScan(float *input, float *output, int len) {
   //@@ Modify the body of this function to complete the functionality of
