@@ -44,7 +44,7 @@ int main(int argc, char **argv) {
   
   wbTime_stop(GPU, "Copying input memory to the GPU.");
   //@@ Initialize the grid and block dimensions here
-  dim3 DimGrid(ceil(inputLength/256.0),1,1);
+  dim3 DimGrid(inputLength/256 +1,1,1);
   dim3 DimBlock(256,1,1);
   
   wbTime_start(Compute, "Performing CUDA computation");
