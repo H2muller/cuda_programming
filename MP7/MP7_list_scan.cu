@@ -24,7 +24,7 @@ __global__ void reductionPhaseKernel() {
   for (unsigned int stride = 1; stride <= BLOCK_SIZE; stride *= 2) {
     int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
     if (localIdx < 2 * BLOCK_SIZE) {
-      XY[localIdx] += XY[localIdx - stride];
+      sharedArray[localIdx] += sharedArray[localIdx - stride];
     __syncthreads();
     }
   }
@@ -39,12 +39,12 @@ __global__ void postReductionReversePhase() {
   }
   __syncthreads();
   if (i < InputSize) {
-    Output[i] = XY[threadIdx.x];
+    Output[i] = sharedArray[threadIdx.x];
   }
 }
 
 
-__global__ void parallelScan(float *input, float *output, int len) {
+__global__ void recursiveScan(float *input, float *output, int len, int level) {
   //@@ Modify the body of this function to complete the functionality of
   //@@ the scan on the device
   //@@ You may need multiple kernel calls; write your kernels before this
@@ -54,21 +54,44 @@ __global__ void parallelScan(float *input, float *output, int len) {
 
   __shared__ float sharedArray[BLOCK_SIZE * 2];
 
-  if(2 * index < len){
-        sharedArray[2 * threadIdx.x] = input[2 * index];
+  if(2 * index + BLOCK_SIZE * blockIdx.x < len){
+        sharedArray[2 * threadIdx.x] = input[2 * index + BLOCK_SIZE * blockIdx.x];
   } else {
         sharedArray[2 * threadIdx.x] = 0; 
   }
-   if(2 * index  + 1 < len){
-        sharedArray[2 * threadIdx.x + 1] = input[2 * index + 1];
+   if(2 * index + BLOCK_SIZE * blockIdx.x + 1 < len){
+        sharedArray[2 * threadIdx.x + 1] = input[2 * index + BLOCK_SIZE * blockIdx.x + 1];
   } else {
         sharedArray[2 * threadIdx.x + 1] = 0;
   }
   __syncthreads();
 
+  int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
+  
+  // reduction phase
+  for (unsigned int stride = 1; stride <= BLOCK_SIZE; stride *= 2) {
+    if (localIdx < 2 * BLOCK_SIZE) {
+      sharedArray[localIdx] += sharedArray[localIdx - stride];
+    __syncthreads();
+    }
+  }
 
+  // reverse phase
+  for (unsigned int stride = BLOCK_SIZE / 2; stride > 0; stride /= 2) {
+    // int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
+    if (localIdx < 2 * BLOCK_SIZE) {
+      sharedArray[localIdx + stride] += sharedArray[localIdx];
+      __syncthreadS();
+    }
+  }
 
-
+  // store partial results to output
+  if (blockIdx.x * 2 * BLOCK_SIZE + threadIdx.x < len) {
+    output[blockIdx.x * 2 * BLOCK_SIZE + threadIdx.x] = sharedArray[threadIdx.x];
+  }
+  if (blockIdx.x * 2 * BLOCK_SIZE + threadIdx.x + blockDim.x < len) {
+    output[blockIdx.x * 2 * BLOCK_SIZE + threadIdx.x + blockDim.x] = sharedArray[threadIdx.x + blockDim.x];
+  }
 
 
 }
