@@ -24,31 +24,6 @@
   //@@ function and call them from here
 
 
-__global__ void reductionPhaseKernel() {
-  // XY[22 * BLOCK_SIZE] from shared memory
-  for (unsigned int stride = 1; stride <= BLOCK_SIZE; stride *= 2) {
-    int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
-    if (localIdx < 2 * BLOCK_SIZE) {
-      sharedArray[localIdx] += sharedArray[localIdx - stride];
-    __syncthreads();
-    }
-  }
-}
-
-__global__ void postReductionReversePhase() {
-  for (unsigned int stride = BLOCK_SIZE / 2; stride > 0; stride /= 2) {
-    int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
-    if (localIdx < 2 * BLOCK_SIZE) {
-      XY[localIdx + stride] += XY[localIdx];
-    }
-  }
-  __syncthreads();
-  if (i < InputSize) {
-    Output[i] = sharedArray[threadIdx.x];
-  }
-}
-
-
 __global__ void singlePassScan(float *input, float *output, int len, int loadIdx, int loadStride) {
   
   __shared__ float sharedArray[BLOCK_SIZE * 2];
