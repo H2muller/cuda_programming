@@ -19,12 +19,24 @@
   } while (0)
 
 
-__global__ void singlePassScan(float *input, float *output, int len, int loadIdx, int loadStride) {
+__global__ void singlePassScan(float *input, float *output, int len, int pass) {
   //@@ Modify the body of this function to complete the functionality of
   //@@ the scan on the device
   //@@ You may need multiple kernel calls; write your kernels before this
   //@@ function and call them from here
   
+  if (pass == 1) {
+    int loadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
+    int loadStride = blockDim.x;
+  } else if (pass == 2) {
+    int loadIdx = (threadIdx.x + 1) * blockDim.x * 2 - 1;
+    int loadStride = 2 * blockDim.x;
+  } else {
+    return 0;
+  }
+
+
+
   __shared__ float sharedArray[BLOCK_SIZE * 2];
 
   if(loadIdx < len){
@@ -71,7 +83,8 @@ __global__ void singlePassScan(float *input, float *output, int len, int loadIdx
 
 __global__ void scanSum(float *input, float *output, float *sum, int len, int index) {
   __shared__ float increment;
-
+  index = 2 * blockIdx.x * blockDim.x + threadIdx.x
+  
   if (threadIdx.x == 0) {
     if (blockIdx.x == 0) {
       increment = 0;
@@ -159,19 +172,15 @@ int main(int argc, char **argv) {
   dim3 singleGrid(1, 1, 1);
 
   // FIRST PASS
-  int firstLoadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
-  int firstLoadStride = blockDim.x;
-  singlePassScan<<<dimGrid, dimBlock>>>(deviceInput, deviceScanBuffer, numElements, firstLoadIdx, firstLoadStride);
+  singlePassScan<<<dimGrid, dimBlock>>>(deviceInput, deviceScanBuffer, numElements, 1);
   cudaDeviceSynchronize();
 
   // SECOND PASS
-  int secondLoadIdx = (threadIdx.x + 1) * blockDim.x * 2 - 1;
-  int secondLoadStride = 2 * blockDim.x;
-  singlePassScan<<<singleGrid, dimBlock>>>(deviceScanBuffer, deviceScanSums, numElements, secondLoadIdx, secondLoadStride);
+  singlePassScan<<<singleGrid, dimBlock>>>(deviceScanBuffer, deviceScanSums, numElements, 2);
   cudaDeviceSynchronize();
 
   // SUM
-  scanSum<<<dimGrid, dimBlock>>>(deviceScanBuffer, deviceOutput, deviceScanSums, numElements, firstLoadIdx);
+  scanSum<<<dimGrid, dimBlock>>>(deviceScanBuffer, deviceOutput, deviceScanSums, numElements);
   cudaDeviceSynchronize();
 
   // recursiveScan(deviceInput, deviceScanBuffer, deviceScanSums, deviceOutput, numElements);
