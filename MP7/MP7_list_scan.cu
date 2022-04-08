@@ -70,9 +70,28 @@ __global__ void singlePassScan(float *input, float *output, int len, int loadIdx
   }
 }
 
+__global__ void scanSum(float *input, float *output, float *sum, int len, int index) {
+  __shared__ float increment;
+
+  if (threadIdx.x == 0) {
+    if (blockIdx.x == 0) {
+      increment = 0;
+    } else {
+      increment = sum[blockIdx.x - 1];
+    }
+  }
+  __syncthreads();
+
+  if (index < len) {
+    output[index] = input[index] + increment;
+  }
+  if (index + blockDim.x) {
+    output[index + blockDim.x] = input[index + blockDim.x] + increment;
+  }
+}
 
 
-void recursiveScan (float *input, float *output, int len) {
+void recursiveScan (float *input, float *output, int len){
   
   // FIRST PASS
   dim3 dimBlock(BLOCK_SIZE, 1, 1);
@@ -81,7 +100,7 @@ void recursiveScan (float *input, float *output, int len) {
   int firstLoadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
   int firstLoadStride = blockDim.x;
 
-  singlePassScan<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, numElements, firstLoadIdx, firstLoadStride);
+  singlePassScan<<<dimGrid, dimBlock>>>(deviceInput, deviceScanBuffer, numElements, firstLoadIdx, firstLoadStride);
 
   // SECOND PASS
   dim3 singleGrid(1, 1, 1);
@@ -89,7 +108,10 @@ void recursiveScan (float *input, float *output, int len) {
   int secondLoadIdx = (threadIdx.x + 1) * blockDim.x * 2 - 1;
   int secondLoadStride = 2 * blockDim.x;
 
-  singlePassScan<<<singleGrid, dimBlock>>>(deviceOutput, deviceOutput, numElements, secondLoadIdx, secondLoadStride);
+  singlePassScan<<<singleGrid, dimBlock>>>(deviceScanBuffer, deviceScanSums, numElements, secondLoadIdx, secondLoadStride);
+
+  // SUM
+  scanSum<<<dimGrid, dimBlock>>>(deviceScanBuffer, deviceOutput, deviceScanSums, numElements, firstLoadIdx);
 }
 
 
@@ -114,6 +136,8 @@ int main(int argc, char **argv) {
 
   wbTime_start(GPU, "Allocating GPU memory.");
   wbCheck(cudaMalloc((void **)&deviceInput, numElements * sizeof(float)));
+  wbCheck(cudaMalloc((void **)&deviceScanBuffer, numElements * sizeof(float)));
+  wbCheck(cudaMalloc((void **)&deviceScanSums, 2 * BLOCK_SIZE * sizeof(float)));
   wbCheck(cudaMalloc((void **)&deviceOutput, numElements * sizeof(float)));
   wbTime_stop(GPU, "Allocating GPU memory.");
 
@@ -133,9 +157,7 @@ int main(int argc, char **argv) {
   //@@ Modify this to complete the functionality of the scan
   //@@ on the deivce
 
-  firstPassScan<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, numElements);
-  secondPassScan<<<(1,1,1), dimBlock>>>(deviceInput, deviceOutput, numElements);
-  add<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, deviceOutput, numElements);
+  recursiveScan<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, numElements);
 
 
   cudaDeviceSynchronize();
@@ -147,6 +169,8 @@ int main(int argc, char **argv) {
 
   wbTime_start(GPU, "Freeing GPU Memory");
   cudaFree(deviceInput);
+  cudaFree(deviceScanBuffer);
+  cudaFree(deviceScanSums);
   cudaFree(deviceOutput);
   wbTime_stop(GPU, "Freeing GPU Memory");
 
