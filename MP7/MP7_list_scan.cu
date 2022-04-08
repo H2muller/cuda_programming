@@ -91,27 +91,27 @@ __global__ void scanSum(float *input, float *output, float *sum, int len, int in
 }
 
 
-void recursiveScan (float *input, float *scan_buffer, float *scan_sums, float *output, int len){
+// void recursiveScan (float *input, float *scan_buffer, float *scan_sums, float *output, int len){
   
-  // FIRST PASS
+//   // FIRST PASS
 
-  //@@ Initialize the grid and block dimensions here
-  dim3 dimGrid(ceil(len/float(BLOCK_SIZE * 2)), 1, 1);
-  dim3 dimBlock(BLOCK_SIZE, 1, 1);
-  dim3 singleGrid(1, 1, 1);
+//   //@@ Initialize the grid and block dimensions here
+//   dim3 dimGrid(ceil(len/float(BLOCK_SIZE * 2)), 1, 1);
+//   dim3 dimBlock(BLOCK_SIZE, 1, 1);
+//   dim3 singleGrid(1, 1, 1);
 
-  int firstLoadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
-  int firstLoadStride = blockDim.x;
-  singlePassScan<<<dimGrid, dimBlock>>>(input, scan_buffer, len, firstLoadIdx, firstLoadStride);
+//   int firstLoadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
+//   int firstLoadStride = blockDim.x;
+//   singlePassScan<<<dimGrid, dimBlock>>>(input, scan_buffer, len, firstLoadIdx, firstLoadStride);
 
-  // SECOND PASS
-  int secondLoadIdx = (threadIdx.x + 1) * blockDim.x * 2 - 1;
-  int secondLoadStride = 2 * blockDim.x;
-  singlePassScan<<<singleGrid, dimBlock>>>(scan_buffer, scan_sums, len, secondLoadIdx, secondLoadStride);
+//   // SECOND PASS
+//   int secondLoadIdx = (threadIdx.x + 1) * blockDim.x * 2 - 1;
+//   int secondLoadStride = 2 * blockDim.x;
+//   singlePassScan<<<singleGrid, dimBlock>>>(scan_buffer, scan_sums, len, secondLoadIdx, secondLoadStride);
 
-  // SUM
-  scanSum<<<dimGrid, dimBlock>>>(scan_buffer, output, scan_sums, len, firstLoadIdx);
-}
+//   // SUM
+//   scanSum<<<dimGrid, dimBlock>>>(scan_buffer, output, scan_sums, len, firstLoadIdx);
+// }
 
 
 
