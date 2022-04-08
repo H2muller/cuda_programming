@@ -25,28 +25,27 @@ __global__ void singlePassScan(float *input, float *output, int len, int pass) {
   //@@ You may need multiple kernel calls; write your kernels before this
   //@@ function and call them from here
   
+  __shared__ float sharedArray[BLOCK_SIZE * 2];
+  int loadIndex;
+  int loadStride;
   if (pass == 1) {
-    int loadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
-    int loadStride = blockDim.x;
+    loadIndex = 2 * blockIdx.x * blockDim.x + threadIdx.x;
+    loadStride = blockDim.x;
   } else if (pass == 2) {
-    int loadIdx = (threadIdx.x + 1) * blockDim.x * 2 - 1;
-    int loadStride = 2 * blockDim.x;
+    loadIndex = (threadIdx.x + 1) * blockDim.x * 2 - 1;
+    loadStride = 2 * blockDim.x;
   } else {
-    return 0;
+    return;
   }
 
-
-
-  __shared__ float sharedArray[BLOCK_SIZE * 2];
-
-  if(loadIdx < len){
-        sharedArray[threadIdx.x] = input[loadIdx];
+  if(loadIndex < len){
+        sharedArray[threadIdx.x] = input[loadIndex];
   } else {
         sharedArray[threadIdx.x] = 0; 
   }
 
-  if(loadIdx + loadStride < len){
-        sharedArray[threadIdx.x + blockDim.x] = input[loadIdx + loadStride];
+  if(loadIndex + loadStride < len){
+        sharedArray[threadIdx.x + blockDim.x] = input[loadIndex + loadStride];
   } else {
         sharedArray[threadIdx.x + blockDim.x] = 0;
   }
@@ -81,9 +80,9 @@ __global__ void singlePassScan(float *input, float *output, int len, int pass) {
   }
 }
 
-__global__ void scanSum(float *input, float *output, float *sum, int len, int index) {
+__global__ void scanSum(float *input, float *output, float *sum, int len) {
   __shared__ float increment;
-  index = 2 * blockIdx.x * blockDim.x + threadIdx.x
+  int localIndex = 2 * blockIdx.x * blockDim.x + threadIdx.x;
   
   if (threadIdx.x == 0) {
     if (blockIdx.x == 0) {
@@ -94,11 +93,11 @@ __global__ void scanSum(float *input, float *output, float *sum, int len, int in
   }
   __syncthreads();
 
-  if (index < len) {
-    output[index] = input[index] + increment;
+  if (localIndex < len) {
+    output[localIndex] = input[localIndex] + increment;
   }
-  if (index + blockDim.x) {
-    output[index + blockDim.x] = input[index + blockDim.x] + increment;
+  if (localIndex + blockDim.x) {
+    output[localIndex + blockDim.x] = input[localIndex + blockDim.x] + increment;
   }
 }
 
@@ -112,17 +111,17 @@ __global__ void scanSum(float *input, float *output, float *sum, int len, int in
 //   dim3 dimBlock(BLOCK_SIZE, 1, 1);
 //   dim3 singleGrid(1, 1, 1);
 
-//   int firstLoadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
+//   int firstloadIndex = 2 * blockIdx.x * blockDim.x + threadIdx.x;
 //   int firstLoadStride = blockDim.x;
-//   singlePassScan<<<dimGrid, dimBlock>>>(input, scan_buffer, len, firstLoadIdx, firstLoadStride);
+//   singlePassScan<<<dimGrid, dimBlock>>>(input, scan_buffer, len, firstloadIndex, firstLoadStride);
 
 //   // SECOND PASS
-//   int secondLoadIdx = (threadIdx.x + 1) * blockDim.x * 2 - 1;
+//   int secondloadIndex = (threadIdx.x + 1) * blockDim.x * 2 - 1;
 //   int secondLoadStride = 2 * blockDim.x;
-//   singlePassScan<<<singleGrid, dimBlock>>>(scan_buffer, scan_sums, len, secondLoadIdx, secondLoadStride);
+//   singlePassScan<<<singleGrid, dimBlock>>>(scan_buffer, scan_sums, len, secondloadIndex, secondLoadStride);
 
 //   // SUM
-//   scanSum<<<dimGrid, dimBlock>>>(scan_buffer, output, scan_sums, len, firstLoadIdx);
+//   scanSum<<<dimGrid, dimBlock>>>(scan_buffer, output, scan_sums, len, firstloadIndex);
 // }
 
 
@@ -132,8 +131,8 @@ int main(int argc, char **argv) {
   float *hostInput;  // The input 1D list
   float *hostOutput; // The output list
   float *deviceInput;
-  float *deviceScanBuffer; // Temporary buffer for scan
-  float *deviceScanSums;   // Temporary buffer for scan sums
+  float *deviceTempScan; // Temporary buffer for scan
+  float *deviceTempSums;   // Temporary buffer for scan sums
   float *deviceOutput;
   int numElements; // number of elements in the list
 
@@ -149,8 +148,8 @@ int main(int argc, char **argv) {
 
   wbTime_start(GPU, "Allocating GPU memory.");
   wbCheck(cudaMalloc((void **)&deviceInput, numElements * sizeof(float)));
-  wbCheck(cudaMalloc((void **)&deviceScanBuffer, numElements * sizeof(float)));
-  wbCheck(cudaMalloc((void **)&deviceScanSums, 2 * BLOCK_SIZE * sizeof(float)));
+  wbCheck(cudaMalloc((void **)&deviceTempScan, numElements * sizeof(float)));
+  wbCheck(cudaMalloc((void **)&deviceTempSums, 2 * BLOCK_SIZE * sizeof(float)));
   wbCheck(cudaMalloc((void **)&deviceOutput, numElements * sizeof(float)));
   wbTime_stop(GPU, "Allocating GPU memory.");
 
@@ -172,18 +171,18 @@ int main(int argc, char **argv) {
   dim3 singleGrid(1, 1, 1);
 
   // FIRST PASS
-  singlePassScan<<<dimGrid, dimBlock>>>(deviceInput, deviceScanBuffer, numElements, 1);
+  singlePassScan<<<dimGrid, dimBlock>>>(deviceInput, deviceTempScan, numElements, 1);
   cudaDeviceSynchronize();
 
   // SECOND PASS
-  singlePassScan<<<singleGrid, dimBlock>>>(deviceScanBuffer, deviceScanSums, numElements, 2);
+  singlePassScan<<<singleGrid, dimBlock>>>(deviceTempScan, deviceTempSums, numElements, 2);
   cudaDeviceSynchronize();
 
   // SUM
-  scanSum<<<dimGrid, dimBlock>>>(deviceScanBuffer, deviceOutput, deviceScanSums, numElements);
+  scanSum<<<dimGrid, dimBlock>>>(deviceTempScan, deviceOutput, deviceTempSums, numElements);
   cudaDeviceSynchronize();
 
-  // recursiveScan(deviceInput, deviceScanBuffer, deviceScanSums, deviceOutput, numElements);
+  // recursiveScan(deviceInput, deviceTempScan, deviceTempSums, deviceOutput, numElements);
 
 
   // cudaDeviceSynchronize();
@@ -195,8 +194,8 @@ int main(int argc, char **argv) {
 
   wbTime_start(GPU, "Freeing GPU Memory");
   cudaFree(deviceInput);
-  cudaFree(deviceScanBuffer);
-  cudaFree(deviceScanSums);
+  cudaFree(deviceTempScan);
+  cudaFree(deviceTempSums);
   cudaFree(deviceOutput);
   wbTime_stop(GPU, "Freeing GPU Memory");
 
