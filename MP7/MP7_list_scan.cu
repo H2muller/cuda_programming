@@ -18,13 +18,12 @@
     }                                                                     \
   } while (0)
 
+
+__global__ void singlePassScan(float *input, float *output, int len, int loadIdx, int loadStride) {
   //@@ Modify the body of this function to complete the functionality of
   //@@ the scan on the device
   //@@ You may need multiple kernel calls; write your kernels before this
   //@@ function and call them from here
-
-
-__global__ void singlePassScan(float *input, float *output, int len, int loadIdx, int loadStride) {
   
   __shared__ float sharedArray[BLOCK_SIZE * 2];
 
@@ -120,8 +119,8 @@ int main(int argc, char **argv) {
   float *hostInput;  // The input 1D list
   float *hostOutput; // The output list
   float *deviceInput;
-  float *deviceScanBuffer;
-  float *deviceScanSums;
+  float *deviceScanBuffer; // Temporary buffer for scan
+  float *deviceScanSums;   // Temporary buffer for scan sums
   float *deviceOutput;
   int numElements; // number of elements in the list
 
@@ -155,7 +154,7 @@ int main(int argc, char **argv) {
   //@@ on the deivce
 
   //@@ Initialize the grid and block dimensions here
-  dim3 dimGrid(ceil(len/float(BLOCK_SIZE * 2)), 1, 1);
+  dim3 dimGrid(ceil(numElements/float(BLOCK_SIZE * 2)), 1, 1);
   dim3 dimBlock(BLOCK_SIZE, 1, 1);
   dim3 singleGrid(1, 1, 1);
 
@@ -163,19 +162,22 @@ int main(int argc, char **argv) {
   int firstLoadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
   int firstLoadStride = blockDim.x;
   singlePassScan<<<dimGrid, dimBlock>>>(deviceInput, deviceScanBuffer, numElements, firstLoadIdx, firstLoadStride);
+  cudaDeviceSynchronize();
 
   // SECOND PASS
   int secondLoadIdx = (threadIdx.x + 1) * blockDim.x * 2 - 1;
   int secondLoadStride = 2 * blockDim.x;
   singlePassScan<<<singleGrid, dimBlock>>>(deviceScanBuffer, deviceScanSums, numElements, secondLoadIdx, secondLoadStride);
+  cudaDeviceSynchronize();
 
   // SUM
   scanSum<<<dimGrid, dimBlock>>>(deviceScanBuffer, deviceOutput, deviceScanSums, numElements, firstLoadIdx);
+  cudaDeviceSynchronize();
 
   // recursiveScan(deviceInput, deviceScanBuffer, deviceScanSums, deviceOutput, numElements);
 
 
-  cudaDeviceSynchronize();
+  // cudaDeviceSynchronize();
   wbTime_stop(Compute, "Performing CUDA computation");
 
   wbTime_start(Copy, "Copying output memory to the CPU");
@@ -196,4 +198,3 @@ int main(int argc, char **argv) {
 
   return 0;
 }
-
