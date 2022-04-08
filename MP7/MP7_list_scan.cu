@@ -53,7 +53,7 @@ __global__ void singlePassScan(float *input, float *output, int len, int loadIdx
 
   // reverse phase
   for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-    __syncthreadS();
+    __syncthreads();
     int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
     if (localIdx + stride < 2 * blockDim.x) {
       sharedArray[localIdx + stride] += sharedArray[localIdx];
@@ -91,27 +91,26 @@ __global__ void scanSum(float *input, float *output, float *sum, int len, int in
 }
 
 
-void recursiveScan (float *input, float *output, int len){
+void recursiveScan (float *input, float *scan_buffer, float *scan_sums, float *output, int len){
   
   // FIRST PASS
+
+  //@@ Initialize the grid and block dimensions here
+  dim3 dimGrid(ceil(len/float(BLOCK_SIZE * 2)), 1, 1);
   dim3 dimBlock(BLOCK_SIZE, 1, 1);
-  dim3 dimGrid(ceil(len / (float)BLOCK_SIZE), 1, 1);
+  dim3 singleGrid(1, 1, 1);
 
   int firstLoadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
   int firstLoadStride = blockDim.x;
-
-  singlePassScan<<<dimGrid, dimBlock>>>(deviceInput, deviceScanBuffer, numElements, firstLoadIdx, firstLoadStride);
+  singlePassScan<<<dimGrid, dimBlock>>>(input, scan_buffer, len, firstLoadIdx, firstLoadStride);
 
   // SECOND PASS
-  dim3 singleGrid(1, 1, 1);
-
   int secondLoadIdx = (threadIdx.x + 1) * blockDim.x * 2 - 1;
   int secondLoadStride = 2 * blockDim.x;
-
-  singlePassScan<<<singleGrid, dimBlock>>>(deviceScanBuffer, deviceScanSums, numElements, secondLoadIdx, secondLoadStride);
+  singlePassScan<<<singleGrid, dimBlock>>>(scan_buffer, scan_sums, len, secondLoadIdx, secondLoadStride);
 
   // SUM
-  scanSum<<<dimGrid, dimBlock>>>(deviceScanBuffer, deviceOutput, deviceScanSums, numElements, firstLoadIdx);
+  scanSum<<<dimGrid, dimBlock>>>(scan_buffer, output, scan_sums, len, firstLoadIdx);
 }
 
 
@@ -149,15 +148,11 @@ int main(int argc, char **argv) {
   wbCheck(cudaMemcpy(deviceInput, hostInput, numElements * sizeof(float), cudaMemcpyHostToDevice));
   wbTime_stop(GPU, "Copying input memory to the GPU.");
 
-  //@@ Initialize the grid and block dimensions here
-  dim3 dimGrid(ceil(numElements/float(BLOCK_SIZE * 2)), 1, 1);
-  dim3 dimBlock(BLOCK_SIZE, 1, 1);
-
   wbTime_start(Compute, "Performing CUDA computation");
   //@@ Modify this to complete the functionality of the scan
   //@@ on the deivce
 
-  recursiveScan<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, numElements);
+  recursiveScan<<<dimGrid, dimBlock>>>(deviceInput, deviceScanBuffer, deviceScanSums, deviceOutput, numElements);
 
 
   cudaDeviceSynchronize();
