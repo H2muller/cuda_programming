@@ -18,6 +18,11 @@
     }                                                                     \
   } while (0)
 
+  //@@ Modify the body of this function to complete the functionality of
+  //@@ the scan on the device
+  //@@ You may need multiple kernel calls; write your kernels before this
+  //@@ function and call them from here
+
 
 __global__ void reductionPhaseKernel() {
   // XY[22 * BLOCK_SIZE] from shared memory
@@ -44,57 +49,108 @@ __global__ void postReductionReversePhase() {
 }
 
 
-__global__ void recursiveScan(float *input, float *output, int len, int level) {
-  //@@ Modify the body of this function to complete the functionality of
-  //@@ the scan on the device
-  //@@ You may need multiple kernel calls; write your kernels before this
-  //@@ function and call them from here
+__global__ void firstPassScan(float *input, float *output, int len) {
   
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int loadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
+  int loadStride = blockDim.x;
 
   __shared__ float sharedArray[BLOCK_SIZE * 2];
 
-  if(2 * index + BLOCK_SIZE * blockIdx.x < len){
-        sharedArray[2 * threadIdx.x] = input[2 * index + BLOCK_SIZE * blockIdx.x];
+  if(2 * blockIdx.x * blockDim.x + threadIdx.x < len){
+        sharedArray[threadIdx.x] = input[2 * blockIdx.x * blockDim.x + threadIdx.x];
   } else {
-        sharedArray[2 * threadIdx.x] = 0; 
+        sharedArray[threadIdx.x] = 0; 
   }
-   if(2 * index + BLOCK_SIZE * blockIdx.x + 1 < len){
-        sharedArray[2 * threadIdx.x + 1] = input[2 * index + BLOCK_SIZE * blockIdx.x + 1];
+
+   if(2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x < len){
+        sharedArray[threadIdx.x + blockDim.x] = input[2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x];
   } else {
-        sharedArray[2 * threadIdx.x + 1] = 0;
+        sharedArray[threadIdx.x + blockDim.x] = 0;
   }
   __syncthreads();
 
-  int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
   
   // reduction phase
-  for (unsigned int stride = 1; stride <= BLOCK_SIZE; stride *= 2) {
-    if (localIdx < 2 * BLOCK_SIZE) {
-      sharedArray[localIdx] += sharedArray[localIdx - stride];
+  for (int stride = 1; stride <= blockDim.x; stride *= 2) {
     __syncthreads();
+    int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
+    if (localIdx < 2 * blockDim.x) {
+      sharedArray[localIdx] += sharedArray[localIdx - stride];
     }
   }
 
   // reverse phase
-  for (unsigned int stride = BLOCK_SIZE / 2; stride > 0; stride /= 2) {
-    // int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
-    if (localIdx < 2 * BLOCK_SIZE) {
+  for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+    __syncthreadS();
+    int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
+    if (localIdx + stride < 2 * blockDim.x) {
       sharedArray[localIdx + stride] += sharedArray[localIdx];
-      __syncthreadS();
     }
   }
 
   // store partial results to output
-  if (blockIdx.x * 2 * BLOCK_SIZE + threadIdx.x < len) {
-    output[blockIdx.x * 2 * BLOCK_SIZE + threadIdx.x] = sharedArray[threadIdx.x];
+  __syncthreads();
+  if (2 * blockIdx.x * blockDim.x + threadIdx.x < len) {
+    output[2 * blockIdx.x * blockDim.x + threadIdx.x] = sharedArray[threadIdx.x];
   }
-  if (blockIdx.x * 2 * BLOCK_SIZE + threadIdx.x + blockDim.x < len) {
-    output[blockIdx.x * 2 * BLOCK_SIZE + threadIdx.x + blockDim.x] = sharedArray[threadIdx.x + blockDim.x];
+  if (2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x < len) {
+    output[2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x] = sharedArray[threadIdx.x + blockDim.x];
   }
-
-
 }
+
+
+__global__ void secondPassScan(float *input, float *output, int len) {
+  
+  int loadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
+  int loadStride = blockDim.x;
+
+  __shared__ float sharedArray[BLOCK_SIZE * 2];
+
+  if(2 * blockIdx.x * blockDim.x + threadIdx.x < len){
+        sharedArray[threadIdx.x] = input[2 * blockIdx.x * blockDim.x + threadIdx.x];
+  } else {
+        sharedArray[threadIdx.x] = 0; 
+  }
+
+   if(2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x < len){
+        sharedArray[threadIdx.x + blockDim.x] = input[2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x];
+  } else {
+        sharedArray[threadIdx.x + blockDim.x] = 0;
+  }
+  __syncthreads();
+
+  
+  // reduction phase
+  for (int stride = 1; stride <= blockDim.x; stride *= 2) {
+    __syncthreads();
+    int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
+    if (localIdx < 2 * blockDim.x) {
+      sharedArray[localIdx] += sharedArray[localIdx - stride];
+    }
+  }
+
+  // reverse phase
+  for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+    __syncthreadS();
+    int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
+    if (localIdx + stride < 2 * blockDim.x) {
+      sharedArray[localIdx + stride] += sharedArray[localIdx];
+    }
+  }
+
+  // store partial results to output
+  __syncthreads();
+  if (2 * blockIdx.x * blockDim.x + threadIdx.x < len) {
+    output[2 * blockIdx.x * blockDim.x + threadIdx.x] = sharedArray[threadIdx.x];
+  }
+  if (2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x < len) {
+    output[2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x] = sharedArray[threadIdx.x + blockDim.x];
+  }
+}
+
+
+
+
 
 int main(int argc, char **argv) {
   wbArg_t args;
@@ -128,13 +184,16 @@ int main(int argc, char **argv) {
   wbTime_stop(GPU, "Copying input memory to the GPU.");
 
   //@@ Initialize the grid and block dimensions here
-  dim3 dimGrid(1, 1, 1);
+  dim3 dimGrid(ceil(numElements/float(BLOCK_SIZE * 2)), 1, 1);
   dim3 dimBlock(BLOCK_SIZE, 1, 1);
 
   wbTime_start(Compute, "Performing CUDA computation");
   //@@ Modify this to complete the functionality of the scan
   //@@ on the deivce
 
+  firstPassScan<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, numElements);
+  secondPassScan<<<(1,1,1), dimBlock>>>(deviceInput, deviceOutput, numElements);
+  add<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, deviceOutput, numElements);
 
 
   cudaDeviceSynchronize();
