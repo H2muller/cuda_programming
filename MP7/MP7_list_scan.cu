@@ -154,7 +154,7 @@ int main(int argc, char **argv) {
   //@@ Modify this to complete the functionality of the scan
   //@@ on the deivce
 
-  recursiveScan<<<dimGrid, dimBlock>>>(deviceInput, deviceScanBuffer, deviceScanSums, deviceOutput, numElements);
+  recursiveScan(deviceInput, deviceScanBuffer, deviceScanSums, deviceOutput, numElements);
 
 
   cudaDeviceSynchronize();
