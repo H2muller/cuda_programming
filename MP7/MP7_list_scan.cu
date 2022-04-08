@@ -120,6 +120,8 @@ int main(int argc, char **argv) {
   float *hostInput;  // The input 1D list
   float *hostOutput; // The output list
   float *deviceInput;
+  float *deviceScanBuffer;
+  float *deviceScanSums;
   float *deviceOutput;
   int numElements; // number of elements in the list
 
