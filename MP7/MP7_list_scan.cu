@@ -49,21 +49,18 @@ __global__ void postReductionReversePhase() {
 }
 
 
-__global__ void firstPassScan(float *input, float *output, int len) {
+__global__ void singlePassScan(float *input, float *output, int len, int loadIdx, int loadStride) {
   
-  int loadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
-  int loadStride = blockDim.x;
-
   __shared__ float sharedArray[BLOCK_SIZE * 2];
 
-  if(2 * blockIdx.x * blockDim.x + threadIdx.x < len){
-        sharedArray[threadIdx.x] = input[2 * blockIdx.x * blockDim.x + threadIdx.x];
+  if(loadIdx < len){
+        sharedArray[threadIdx.x] = input[loadIdx];
   } else {
         sharedArray[threadIdx.x] = 0; 
   }
 
-   if(2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x < len){
-        sharedArray[threadIdx.x + blockDim.x] = input[2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x];
+  if(loadIdx + loadStride < len){
+        sharedArray[threadIdx.x + blockDim.x] = input[loadIdx + loadStride];
   } else {
         sharedArray[threadIdx.x + blockDim.x] = 0;
   }
@@ -99,56 +96,26 @@ __global__ void firstPassScan(float *input, float *output, int len) {
 }
 
 
-__global__ void secondPassScan(float *input, float *output, int len) {
+
+void recursiveScan (float *input, float *output, int len) {
   
-  int loadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
-  int loadStride = blockDim.x;
+  // FIRST PASS
+  dim3 dimBlock(BLOCK_SIZE, 1, 1);
+  dim3 dimGrid(ceil(len / (float)BLOCK_SIZE), 1, 1);
 
-  __shared__ float sharedArray[BLOCK_SIZE * 2];
+  int firstLoadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
+  int firstLoadStride = blockDim.x;
 
-  if(2 * blockIdx.x * blockDim.x + threadIdx.x < len){
-        sharedArray[threadIdx.x] = input[2 * blockIdx.x * blockDim.x + threadIdx.x];
-  } else {
-        sharedArray[threadIdx.x] = 0; 
-  }
+  singlePassScan<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, numElements, firstLoadIdx, firstLoadStride);
 
-   if(2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x < len){
-        sharedArray[threadIdx.x + blockDim.x] = input[2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x];
-  } else {
-        sharedArray[threadIdx.x + blockDim.x] = 0;
-  }
-  __syncthreads();
+  // SECOND PASS
+  dim3 singleGrid(1, 1, 1);
 
-  
-  // reduction phase
-  for (int stride = 1; stride <= blockDim.x; stride *= 2) {
-    __syncthreads();
-    int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
-    if (localIdx < 2 * blockDim.x) {
-      sharedArray[localIdx] += sharedArray[localIdx - stride];
-    }
-  }
+  int secondLoadIdx = (threadIdx.x + 1) * blockDim.x * 2 - 1;
+  int secondLoadStride = 2 * blockDim.x;
 
-  // reverse phase
-  for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-    __syncthreadS();
-    int localIdx = (threadIdx.x + 1) * stride * 2 - 1;
-    if (localIdx + stride < 2 * blockDim.x) {
-      sharedArray[localIdx + stride] += sharedArray[localIdx];
-    }
-  }
-
-  // store partial results to output
-  __syncthreads();
-  if (2 * blockIdx.x * blockDim.x + threadIdx.x < len) {
-    output[2 * blockIdx.x * blockDim.x + threadIdx.x] = sharedArray[threadIdx.x];
-  }
-  if (2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x < len) {
-    output[2 * blockIdx.x * blockDim.x + threadIdx.x + blockDim.x] = sharedArray[threadIdx.x + blockDim.x];
-  }
+  singlePassScan<<<singleGrid, dimBlock>>>(deviceOutput, deviceOutput, numElements, secondLoadIdx, secondLoadStride);
 }
-
-
 
 
 
