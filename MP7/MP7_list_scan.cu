@@ -154,7 +154,25 @@ int main(int argc, char **argv) {
   //@@ Modify this to complete the functionality of the scan
   //@@ on the deivce
 
-  recursiveScan(deviceInput, deviceScanBuffer, deviceScanSums, deviceOutput, numElements);
+  //@@ Initialize the grid and block dimensions here
+  dim3 dimGrid(ceil(len/float(BLOCK_SIZE * 2)), 1, 1);
+  dim3 dimBlock(BLOCK_SIZE, 1, 1);
+  dim3 singleGrid(1, 1, 1);
+
+  // FIRST PASS
+  int firstLoadIdx = 2 * blockIdx.x * blockDim.x + threadIdx.x;
+  int firstLoadStride = blockDim.x;
+  singlePassScan<<<dimGrid, dimBlock>>>(deviceInput, deviceScanBuffer, numElements, firstLoadIdx, firstLoadStride);
+
+  // SECOND PASS
+  int secondLoadIdx = (threadIdx.x + 1) * blockDim.x * 2 - 1;
+  int secondLoadStride = 2 * blockDim.x;
+  singlePassScan<<<singleGrid, dimBlock>>>(deviceScanBuffer, deviceScanSums, numElements, secondLoadIdx, secondLoadStride);
+
+  // SUM
+  scanSum<<<dimGrid, dimBlock>>>(deviceScanBuffer, deviceOutput, deviceScanSums, numElements, firstLoadIdx);
+
+  // recursiveScan(deviceInput, deviceScanBuffer, deviceScanSums, deviceOutput, numElements);
 
 
   cudaDeviceSynchronize();
