@@ -16,18 +16,18 @@ __global__ void spmvJDSKernel(float *out, int *matColStart, int *matCols,
   //@@ insert spmv kernel for jds format
   int row = blockIdx.x * blockDim.x + threadIdx.x;
   if (row < dim) {
-    float sum = 0.0f;
+    float dot = 0;
     for (int i = matColStart[row]; i < matColStart[row + 1]; i++) {
-      sum += matData[i] * vec[matCols[i]];
+      dot += matData[i] * vec[matColStart[i]];
     }
-    out[matRowPerm[row]] = sum;
+    // output reads data from index in row permutation
+    out[matRowPerm[row]] = dot;
   }
 }
 
 static void spmvJDS(float *out, int *matColStart, int *matCols,
                     int *matRowPerm, int *matRows, float *matData,
                     float *vec, int dim) {
-
   //@@ invoke spmv kernel for jds format
   dim3 dimGrid(dim/256 + 1, 1);
   dim3 dimBlock(256,1,1);
@@ -73,6 +73,11 @@ int main(int argc, char **argv) {
   CSRToJDS(dim, hostCSRRows, hostCSRCols, hostCSRData, &hostJDSRowPerm, &hostJDSRows,
            &hostJDSColStart, &hostJDSCols, &hostJDSData);
   maxRowNNZ = hostJDSRows[0];
+
+  wbLog(TRACE, "The number of columns of matrix is ", ncols);
+  wbLog(TRACE, "The number of rows of matrix is ", nrows);
+  wbLog(TRACE, "The dimension of JDSColStart is ", maxRowNNZ);
+  wbLog(TRACE, "The dimension of vector is ", dim);
 
   wbTime_start(GPU, "Allocating GPU memory.");
   cudaMalloc((void **)&deviceJDSColStart, sizeof(int) * maxRowNNZ);
