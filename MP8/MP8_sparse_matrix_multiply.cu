@@ -17,8 +17,10 @@ __global__ void spmvJDSKernel(float *out, int *matColStart, int *matCols,
   int row = blockIdx.x * blockDim.x + threadIdx.x;
   if (row < dim) {
     float dot = 0;
-    for (int i = matColStart[row]; i < matColStart[row + 1]; i++) {
-      dot += matData[i] * vec[matColStart[i]];
+    unsigned int section = 0;
+    while (section < matRows[row]) {
+      dot += matData[matColStart[section] + row] * vec[matCols[matColStart[section] + row]];
+      section++;
     }
     // output reads data from index in row permutation
     out[matRowPerm[row]] = dot;
@@ -29,11 +31,8 @@ static void spmvJDS(float *out, int *matColStart, int *matCols,
                     int *matRowPerm, int *matRows, float *matData,
                     float *vec, int dim) {
   //@@ invoke spmv kernel for jds format
-  dim3 dimGrid(dim/256 + 1, 1);
-  dim3 dimBlock(256,1,1);
-  spmvJDSKernel<<<1, 1>>>(out, matColStart, matCols, matRowPerm, matRows,
+  spmvJDSKernel<<< ceil(dim/(float)256), 256 >>>(out, matColStart, matCols, matRowPerm, matRows,
                           matData, vec, dim);
-  cudaDeviceSynchronize();
 }
 
 int main(int argc, char **argv) {
@@ -136,4 +135,3 @@ int main(int argc, char **argv) {
 
   return 0;
 }
-
